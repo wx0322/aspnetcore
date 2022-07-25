@@ -24,6 +24,25 @@ internal static class SyntaxTokenExtensions
         return node;
     }
 
+    public static SyntaxNode? TryFindToLevelArgument(this SyntaxNode node)
+    {
+        var current = node;
+        while (current != null)
+        {
+            if (current.Parent?.IsKind(SyntaxKind.Argument) ?? false)
+            {
+                if (current.Parent?.Parent?.IsKind(SyntaxKind.ArgumentList) ?? false)
+                {
+                    return current;
+                }
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
+    }
+
     public static SyntaxNode GetRequiredParent(this SyntaxToken token)
         => token.Parent ?? throw new InvalidOperationException("Token's parent was null");
 
@@ -47,7 +66,7 @@ internal static class SyntaxTokenExtensions
     [return: NotNullIfNotNull("node")]
     private static SyntaxNode? WalkUpParentheses(SyntaxNode? node)
     {
-        while (IsParenthesizedExpression(node?.Parent))
+        while (node?.Parent?.RawKind == (int)SyntaxKind.ParenthesizedExpression)
         {
             node = node.Parent;
         }
@@ -69,9 +88,6 @@ internal static class SyntaxTokenExtensions
         creationExpression = null;
         return false;
     }
-
-    private static bool IsParenthesizedExpression([NotNullWhen(true)] SyntaxNode? node)
-        => node?.RawKind == (int)SyntaxKind.ParenthesizedExpression;
 
     public static bool IsSimpleAssignmentStatement([NotNullWhen(true)] this SyntaxNode? statement)
         => statement is ExpressionStatementSyntax exprStatement &&
