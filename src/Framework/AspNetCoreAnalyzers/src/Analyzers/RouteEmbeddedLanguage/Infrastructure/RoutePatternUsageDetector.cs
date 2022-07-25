@@ -173,60 +173,6 @@ internal static class RoutePatternUsageDetector
         return null;
     }
 
-    //private static IMethodSymbol? FindValidMapMethod(SemanticModel semanticModel, WellKnownTypes wellKnownTypes, BaseArgumentListSyntax argumentList, IMethodSymbol method, CancellationToken cancellationToken)
-    //{
-    //    if (!method.Name.StartsWith("Map", StringComparison.Ordinal))
-    //    {
-    //        return null;
-    //    }
-
-    //    var delegateSymbol = semanticModel.Compilation.GetSpecialType(SpecialType.System_Delegate);
-
-    //    var delegateArgument = method.Parameters.FirstOrDefault(a => SymbolEqualityComparer.Default.Equals(delegateSymbol, a.Type));
-    //    if (delegateArgument == null)
-    //    {
-    //        return null;
-    //    }
-
-    //    // IEndpointRouteBuilder may be removed from symbol because the method is called as an extension method.
-    //    // ReducedFrom includes the original IEndpointRouteBuilder parameter.
-    //    if (!(method.ReducedFrom ?? method).Parameters.Any(
-    //        a => SymbolEqualityComparer.Default.Equals(a.Type, wellKnownTypes.IEndpointRouteBuilder) ||
-    //            a.Type.Implements(wellKnownTypes.IEndpointRouteBuilder)))
-    //    {
-    //        return null;
-    //    }
-
-    //    var delegateIndex = method.Parameters.IndexOf(delegateArgument);
-    //    if (delegateIndex >= argumentList.Arguments.Count)
-    //    {
-    //        return null;
-    //    }
-
-    //    ArgumentSyntax? item = null;
-    //    foreach (var argument in argumentList.Arguments)
-    //    {
-    //        // Handle named argument
-    //        if (argument.NameColon != null && !argument.NameColon.IsMissing)
-    //        {
-    //            var name = argument.NameColon.Name.Identifier.ValueText;
-    //            if (name == delegateArgument.Name)
-    //            {
-    //                item = argument;
-    //                break;
-    //            }
-    //        }
-    //    }
-
-    //    if (item == null)
-    //    {
-    //        // Handle positional argument
-    //        item = argumentList.Arguments[delegateIndex];
-    //    }
-
-    //    return GetMethodInfo(semanticModel, item.Expression, cancellationToken);
-    //}
-
     private static MapMethodParts? FindValidMapMethodParts(SemanticModel semanticModel, WellKnownTypes wellKnownTypes, BaseArgumentListSyntax argumentList, IMethodSymbol method, CancellationToken cancellationToken)
     {
         if (!method.Name.StartsWith("Map", StringComparison.Ordinal))
