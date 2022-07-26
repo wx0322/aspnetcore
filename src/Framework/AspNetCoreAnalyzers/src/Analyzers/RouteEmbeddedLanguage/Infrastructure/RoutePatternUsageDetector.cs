@@ -134,7 +134,7 @@ internal static class RoutePatternUsageDetector
         {
             if (symbol is IMethodSymbol methodSymbol)
             {
-                var mapMethodParts = FindValidMapMethodParts(semanticModel, wellKnownTypes, argumentList, methodSymbol, cancellationToken);
+                var mapMethodParts = FindValidMapMethodParts(semanticModel, wellKnownTypes, argumentList, methodSymbol);
                 if (mapMethodParts != null)
                 {
                     return mapMethodParts;
@@ -145,35 +145,7 @@ internal static class RoutePatternUsageDetector
         return null;
     }
 
-    private static IMethodSymbol? FindMapMethodDelegate(SemanticModel semanticModel, WellKnownTypes wellKnownTypes, SyntaxNode container, CancellationToken cancellationToken)
-    {
-        var argument = container.Parent;
-        if (argument.Parent is not BaseArgumentListSyntax argumentList ||
-            argumentList.Parent is null)
-        {
-            return null;
-        }
-
-        // Multiple overloads could be resolved, e.g. MapGet(string, RequestDelegate) and MapGet(string, Delegate)
-        // Check each overload result to see whether it matches and return the first valid result.
-        var symbols = GetBestOrAllSymbols(semanticModel.GetSymbolInfo(argumentList.Parent, cancellationToken));
-
-        foreach (var symbol in symbols)
-        {
-            if (symbol is IMethodSymbol methodSymbol)
-            {
-                var mapMethodParts = FindValidMapMethodParts(semanticModel, wellKnownTypes, argumentList, methodSymbol, cancellationToken);
-                if (mapMethodParts != null)
-                {
-                    return GetMethodInfo(semanticModel, mapMethodParts.Value.DelegateExpression, cancellationToken);
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private static MapMethodParts? FindValidMapMethodParts(SemanticModel semanticModel, WellKnownTypes wellKnownTypes, BaseArgumentListSyntax argumentList, IMethodSymbol method, CancellationToken cancellationToken)
+    private static MapMethodParts? FindValidMapMethodParts(SemanticModel semanticModel, WellKnownTypes wellKnownTypes, BaseArgumentListSyntax argumentList, IMethodSymbol method)
     {
         if (!method.Name.StartsWith("Map", StringComparison.Ordinal))
         {
@@ -190,7 +162,7 @@ internal static class RoutePatternUsageDetector
         }
 
         var delegateSymbol = semanticModel.Compilation.GetSpecialType(SpecialType.System_Delegate);
-        var delegateParameter = method.Parameters.FirstOrDefault(a => SymbolEqualityComparer.Default.Equals(delegateSymbol, a.Type));
+        var delegateParameter = method.Parameters.FirstOrDefault(p => SymbolEqualityComparer.Default.Equals(delegateSymbol, p.Type));
         if (delegateParameter == null)
         {
             return null;
@@ -202,9 +174,10 @@ internal static class RoutePatternUsageDetector
             return null;
         }
 
-        // TODO - check string has [StringSyntax] attribute
         var stringSymbol = semanticModel.Compilation.GetSpecialType(SpecialType.System_String);
-        var routeStringParameter = method.Parameters.FirstOrDefault(a => SymbolEqualityComparer.Default.Equals(stringSymbol, a.Type));
+        var routeStringParameter = method.Parameters.FirstOrDefault(p => SymbolEqualityComparer.Default.Equals(stringSymbol, p.Type) &&
+            RouteStringSyntaxDetector.HasMatchingStringSyntaxAttribute(p, out var identifer) &&
+            identifer == "Route");
         if (routeStringParameter == null)
         {
             return null;

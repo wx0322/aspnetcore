@@ -165,7 +165,7 @@ internal static class RouteStringSyntaxDetector
         return HasMatchingStringSyntaxAttribute(parameter, out identifier);
     }
 
-    private static bool IsArgumentToAttributeParameterWithMatchingStringSyntaxAttribute(
+    public static bool IsArgumentToAttributeParameterWithMatchingStringSyntaxAttribute(
         SemanticModel semanticModel,
         SyntaxNode argument,
         CancellationToken cancellationToken,
@@ -191,7 +191,7 @@ internal static class RouteStringSyntaxDetector
             HasMatchingStringSyntaxAttribute(symbol, out identifier);
     }
 
-    private static bool HasMatchingStringSyntaxAttribute(
+    public static bool HasMatchingStringSyntaxAttribute(
         [NotNullWhen(true)] ISymbol? symbol,
         [NotNullWhen(true)] out string? identifier)
     {

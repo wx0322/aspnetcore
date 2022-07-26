@@ -27,7 +27,7 @@ namespace Microsoft.AspNetCore.Analyzers.RouteEmbeddedLanguage;
 
 [ExportCompletionProvider(nameof(RoutePatternCompletionProvider), LanguageNames.CSharp)]
 [Shared]
-public class MinimalParametersCompletionProvider : CompletionProvider
+public class FrameworkParametersCompletionProvider : CompletionProvider
 {
     private const string StartKey = nameof(StartKey);
     private const string LengthKey = nameof(LengthKey);
@@ -97,7 +97,13 @@ public class MinimalParametersCompletionProvider : CompletionProvider
         var token = root.FindToken(position);
 
         // If space is before a close paren then change current token to the previous argument.
-        if (token.IsKind(SyntaxKind.CloseParenToken))
+        if (token.IsKind(SyntaxKind.CloseParenToken) || token.IsKind(SyntaxKind.CommaToken))
+        {
+            token = token.GetPreviousToken();
+        }
+
+        // If space is after ? then it's likely a nullable type and move to previous type token.
+        if (token.IsKind(SyntaxKind.QuestionToken))
         {
             token = token.GetPreviousToken();
         }
@@ -109,7 +115,7 @@ public class MinimalParametersCompletionProvider : CompletionProvider
             return;
         }
 
-        var container = token.Parent?.TryFindToLevelArgument();
+        var container = TryFindMinimalApiArgument(token.Parent) ?? TryFindMvcActionParameter(token.Parent);
         if (container == null)
         {
             return;
@@ -117,34 +123,34 @@ public class MinimalParametersCompletionProvider : CompletionProvider
 
         EmbeddedCompletionContext routePatternCompletionContext = default;
 
+        var semanticModel = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
+        if (semanticModel == null)
+        {
+            return;
+        }
+
+        if (!WellKnownTypes.TryGetOrCreate(semanticModel.Compilation, out var wellKnownTypes))
+        {
+            return;
+        }
+
+        // Don't offer route parameter names when the parameter type can't be bound to route parameters. e.g. HttpContext.
+        var isCurrentParameterSpecialType = IsCurrentParameterNotBindable(token, semanticModel, wellKnownTypes, context.CancellationToken);
+        if (isCurrentParameterSpecialType)
+        {
+            return;
+        }
+
+        // Don't offer route parameter names when the parameter has an attribute that can't be bound to route parameters.
+        // e.g [AsParameters] or [IFromBodyMetadata].
+        var hasNonRouteAttribute = HasNonRouteAttribute(token, semanticModel, wellKnownTypes, context.CancellationToken);
+        if (hasNonRouteAttribute)
+        {
+            return;
+        }
+
         if (container.Parent.IsKind(SyntaxKind.Argument))
         {
-            var semanticModel = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
-            if (semanticModel == null)
-            {
-                return;
-            }
-
-            if (!WellKnownTypes.TryGetOrCreate(semanticModel.Compilation, out var wellKnownTypes))
-            {
-                return;
-            }
-
-            // Don't offer route parameter names when the parameter type can't be bound to route parameters. e.g. HttpContext.
-            var isCurrentParameterSpecialType = IsCurrentParameterNotBindable(token, semanticModel, wellKnownTypes, context.CancellationToken);
-            if (isCurrentParameterSpecialType)
-            {
-                return;
-            }
-
-            // Don't offer route parameter names when the parameter has an attribute that can't be bound to route parameters.
-            // e.g [AsParameters] or [IFromBodyMetadata].
-            var hasNonRouteAttribute = HasNonRouteAttribute(token, semanticModel, wellKnownTypes, context.CancellationToken);
-            if (hasNonRouteAttribute)
-            {
-                return;
-            }
-
             var mapMethodParts = RoutePatternUsageDetector.FindMapMethodParts(semanticModel, wellKnownTypes, container, context.CancellationToken);
             if (mapMethodParts == null)
             {
@@ -177,6 +183,43 @@ public class MinimalParametersCompletionProvider : CompletionProvider
                     ProvideCompletions(routePatternCompletionContext);
                     break;
                 }
+            }
+        }
+        else if (container.Parent.IsKind(SyntaxKind.Parameter))
+        {
+            var methodSyntax = container.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+            var methodSymbol = semanticModel.GetDeclaredSymbol(methodSyntax, context.CancellationToken);
+
+            // Check method is a valid MVC action.
+            if (methodSymbol?.ContainingType is not INamedTypeSymbol typeSymbol ||
+                !MvcDetector.IsController(typeSymbol, wellKnownTypes) ||
+                !MvcDetector.IsAction(methodSymbol, wellKnownTypes))
+            {
+                return;
+            }
+
+            var routeToken = TryGetMvcActionRouteToken(context, semanticModel, methodSyntax);
+            if (routeToken != null)
+            {
+                var virtualChars = CSharpVirtualCharService.Instance.TryConvertToVirtualChars(routeToken.Value);
+                var tree = RoutePatternParser.TryParse(virtualChars, supportTokenReplacement: false);
+                if (tree == null)
+                {
+                    return;
+                }
+
+                if (routePatternCompletionContext.Items == null)
+                {
+                    routePatternCompletionContext = new EmbeddedCompletionContext(context, tree, wellKnownTypes, methodSymbol: null, isMinimal: true, isMvcAttribute: false);
+                }
+
+                var existingParameterNames = GetExistingParameterNames(methodSyntax);
+                foreach (var parameterName in existingParameterNames)
+                {
+                    routePatternCompletionContext.AddUsedParameterName(parameterName);
+                }
+
+                ProvideCompletions(routePatternCompletionContext);
             }
         }
 
@@ -212,10 +255,75 @@ public class MinimalParametersCompletionProvider : CompletionProvider
                 tags: ImmutableArray.Create(embeddedItem.Glyph)));
         }
 
+        context.SuggestionModeItem = CompletionItem.Create(
+            displayText: "<Name>",
+            inlineDescription: "",
+            rules: CompletionItemRules.Default);
+
         context.IsExclusive = true;
     }
 
-    private bool HasNonRouteAttribute(SyntaxToken token, SemanticModel semanticModel, WellKnownTypes wellKnownTypes, CancellationToken cancellationToken)
+    private static SyntaxToken? TryGetMvcActionRouteToken(CompletionContext context, SemanticModel? semanticModel, MethodDeclarationSyntax? method)
+    {
+        foreach (var attributeList in method.AttributeLists)
+        {
+            foreach (var attribute in attributeList.Attributes)
+            {
+                foreach (var attributeArgument in attribute.ArgumentList.Arguments)
+                {
+                    if (RouteStringSyntaxDetector.IsArgumentToAttributeParameterWithMatchingStringSyntaxAttribute(
+                        semanticModel,
+                        attributeArgument,
+                        context.CancellationToken,
+                        out var identifer) &&
+                        identifer == "Route" &&
+                        attributeArgument.Expression is LiteralExpressionSyntax literalExpression)
+                    {
+                        return literalExpression.Token;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static SyntaxNode? TryFindMvcActionParameter(SyntaxNode node)
+    {
+        var current = node;
+        while (current != null)
+        {
+            if (current.Parent?.IsKind(SyntaxKind.Parameter) ?? false)
+            {
+                return current;
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
+    }
+
+    private static SyntaxNode? TryFindMinimalApiArgument(SyntaxNode node)
+    {
+        var current = node;
+        while (current != null)
+        {
+            if (current.Parent?.IsKind(SyntaxKind.Argument) ?? false)
+            {
+                if (current.Parent?.Parent?.IsKind(SyntaxKind.ArgumentList) ?? false)
+                {
+                    return current;
+                }
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
+    }
+
+    private static bool HasNonRouteAttribute(SyntaxToken token, SemanticModel semanticModel, WellKnownTypes wellKnownTypes, CancellationToken cancellationToken)
     {
         if (token.Parent?.Parent is ParameterSyntax parameter)
         {
@@ -275,11 +383,11 @@ public class MinimalParametersCompletionProvider : CompletionProvider
         return false;
     }
 
-    private static ImmutableArray<string> GetExistingParameterNames(ExpressionSyntax delegateExpression)
+    private static ImmutableArray<string> GetExistingParameterNames(SyntaxNode node)
     {
         var builder = ImmutableArray.CreateBuilder<string>();
 
-        if (delegateExpression is TupleExpressionSyntax tupleExpression)
+        if (node is TupleExpressionSyntax tupleExpression)
         {
             foreach (var argument in tupleExpression.Arguments)
             {
@@ -292,14 +400,24 @@ public class MinimalParametersCompletionProvider : CompletionProvider
                 }
             }
         }
-        else if (delegateExpression is ParenthesizedLambdaExpressionSyntax parenthesizedExpression)
+        else
         {
-            foreach (var p in parenthesizedExpression.ParameterList.Parameters)
+            var parameterList = node switch
             {
-                if (p is ParameterSyntax parameter &&
-                    parameter.Identifier is { } identifer && !identifer.IsMissing)
+                ParenthesizedLambdaExpressionSyntax parenthesizedLambdaExpression => parenthesizedLambdaExpression.ParameterList,
+                MethodDeclarationSyntax methodDeclaration => methodDeclaration.ParameterList,
+                _ => null
+            };
+
+            if (parameterList != null)
+            {
+                foreach (var p in parameterList.Parameters)
                 {
-                    builder.Add(identifer.ValueText);
+                    if (p is ParameterSyntax parameter &&
+                        parameter.Identifier is { } identifer && !identifer.IsMissing)
+                    {
+                        builder.Add(identifer.ValueText);
+                    }
                 }
             }
         }
@@ -361,7 +479,7 @@ public class MinimalParametersCompletionProvider : CompletionProvider
     private readonly struct EmbeddedCompletionContext
     {
         private readonly CompletionContext _context;
-        private readonly HashSet<string> _names = new();
+        private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase);
 
         public readonly RoutePatternTree Tree;
         public readonly WellKnownTypes WellKnownTypes;

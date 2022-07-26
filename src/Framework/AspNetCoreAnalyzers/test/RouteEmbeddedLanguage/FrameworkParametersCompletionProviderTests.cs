@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Http;
 
 namespace Microsoft.AspNetCore.Analyzers.RouteEmbeddedLanguage;
 
-public partial class MinimalParametersCompletionProviderTests
+public partial class FrameworkParametersCompletionProviderTests
 {
     private TestDiagnosticAnalyzerRunner Runner { get; } = new(new RoutePatternAnalyzer());
 
@@ -26,6 +26,78 @@ class Program
     static void Main()
     {
         EndpointRouteBuilderExtensions.MapGet(null, @""{id}"", (int $$
+    }
+}
+");
+
+        // Assert
+        Assert.Collection(
+            result.Completions.Items,
+            i => Assert.Equal("id", i.DisplayText));
+    }
+
+    [Fact]
+    public async Task Insertion_Space_DateTime_EndpointMapGet_HasDelegate_ReturnRouteParameterItem()
+    {
+        // Arrange & Act
+        var result = await GetCompletionsAndServiceAsync(@"
+using System;
+using System.Diagnostics.CodeAnalysis;
+using Microsoft.AspNetCore.Builder;
+
+class Program
+{
+    static void Main()
+    {
+        EndpointRouteBuilderExtensions.MapGet(null, @""{id}"", (DateTime $$
+    }
+}
+");
+
+        // Assert
+        Assert.Collection(
+            result.Completions.Items,
+            i => Assert.Equal("id", i.DisplayText));
+    }
+
+    [Fact]
+    public async Task Insertion_Space_NullableInt_CloseParen_EndpointMapGet_HasDelegate_ReturnRouteParameterItem()
+    {
+        // Arrange & Act
+        var result = await GetCompletionsAndServiceAsync(@"
+using System;
+using System.Diagnostics.CodeAnalysis;
+using Microsoft.AspNetCore.Builder;
+
+class Program
+{
+    static void Main()
+    {
+        EndpointRouteBuilderExtensions.MapGet(null, @""{id}"", (int? $$)
+    }
+}
+");
+
+        // Assert
+        Assert.Collection(
+            result.Completions.Items,
+            i => Assert.Equal("id", i.DisplayText));
+    }
+
+    [Fact]
+    public async Task Insertion_Space_NullableInt_EndpointMapGet_HasDelegate_ReturnRouteParameterItem()
+    {
+        // Arrange & Act
+        var result = await GetCompletionsAndServiceAsync(@"
+using System;
+using System.Diagnostics.CodeAnalysis;
+using Microsoft.AspNetCore.Builder;
+
+class Program
+{
+    static void Main()
+    {
+        EndpointRouteBuilderExtensions.MapGet(null, @""{id}"", (int? $$
     }
 }
 ");
@@ -111,6 +183,33 @@ class Program
     static void Main()
     {
         EndpointRouteBuilderExtensions.MapGet(null, @""{id}"", (string id, int $$) => { });
+    }
+}
+");
+
+        // Assert
+        Assert.Empty(result.Completions.Items);
+    }
+
+    [Fact]
+    public async Task Insertion_Space_MultipleArgs_ParameterAlreadyUsed_DifferentCase_EndpointMapGet_HasCompleteDelegate_NoItems()
+    {
+        // Arrange & Act
+        var result = await GetCompletionsAndServiceAsync(@"
+using System;
+using System.Diagnostics.CodeAnalysis;
+using System.IO;
+using System.IO.Pipelines;
+using System.Security.Claims;
+using System.Threading;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+
+class Program
+{
+    static void Main()
+    {
+        EndpointRouteBuilderExtensions.MapGet(null, @""{ID}"", (string id, int $$) => { });
     }
 }
 ");
@@ -262,7 +361,7 @@ class Program
     }
 
     [Fact]
-    public async Task Insertion_ParameterOpenBrace_EndpointMapGet_NullDelegate_NoResults()
+    public async Task Insertion_Space_EndpointMapGet_NullDelegate_NoResults()
     {
         // Arrange & Act
         var result = await GetCompletionsAndServiceAsync(@"
@@ -274,7 +373,7 @@ class Program
 {
     static void Main()
     {
-        EndpointRouteBuilderExtensions.MapGet(null, @""{$$"", null);
+        EndpointRouteBuilderExtensions.MapGet(null, @""{id}"", null $$
     }
 }
 ");
@@ -284,7 +383,7 @@ class Program
     }
 
     [Fact]
-    public async Task Insertion_ParameterOpenBrace_EndpointMapGet_Incomplete_NoResults()
+    public async Task Insertion_Space_EndpointMapGet_Incomplete_NoResults()
     {
         // Arrange & Act
         var result = await GetCompletionsAndServiceAsync(@"
@@ -296,17 +395,18 @@ class Program
 {
     static void Main()
     {
-        EndpointRouteBuilderExtensions.MapGet(null, @""{$$"";
+        EndpointRouteBuilderExtensions.MapGet(null, @""{id}"", $$
     }
 }
 ");
 
         // Assert
-        Assert.Empty(result.Completions.Items);
+        var item = result.Completions.Items.FirstOrDefault(i => i.DisplayText == "id");
+        Assert.Null(item);
     }
 
     [Fact]
-    public async Task Insertion_ParameterOpenBrace_CustomMapGet_ReturnDelegateParameterItem()
+    public async Task Insertion_Space_CustomMapGet_ReturnDelegateParameterItem()
     {
         // Arrange & Act
         var result = await GetCompletionsAndServiceAsync(@"
@@ -319,7 +419,7 @@ class Program
 {
     static void Main()
     {
-        MapCustomThing(null, @""{$$"", (string id) => "");
+        MapCustomThing(null, @""{id}"", (string $$) => "");
     }
 
     static void MapCustomThing(IEndpointRouteBuilder endpoints, [StringSyntax(""Route"")] string pattern, Delegate delegate)
@@ -335,36 +435,157 @@ class Program
     }
 
     [Fact]
-    public async Task Insertion_ParameterOpenBrace_ControllerAction_HasParameter_ReturnActionParameterItem()
+    public async Task Insertion_Space_CustomMapGet_NoRouteSyntax_NoItems()
     {
         // Arrange & Act
         var result = await GetCompletionsAndServiceAsync(@"
 using System;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 
 class Program
 {
     static void Main()
     {
+        MapCustomThing(null, @""{id}"", (string $$) => "");
     }
-}
 
-public class TestController
-{
-    [HttpGet(@""{$$"")]
-    public object TestAction(int id)
+    static void MapCustomThing(IEndpointRouteBuilder endpoints, string pattern, Delegate delegate)
     {
-        return null;
     }
 }
 ");
 
         // Assert
+        Assert.Empty(result.Completions.Items);
+    }
+
+    [Fact]
+    public async Task Insertion_Space_ControllerAction_HasParameter_ReturnActionParameterItem()
+    {
+        // Arrange & Act
+        var result = await GetCompletionsAndServiceAsync(@"
+    using System;
+    using System.Diagnostics.CodeAnalysis;
+    using Microsoft.AspNetCore.Builder;
+    using Microsoft.AspNetCore.Mvc;
+
+    class Program
+    {
+        static void Main()
+        {
+        }
+    }
+
+    public class TestController
+    {
+        [HttpGet(@""{id}"")]
+        public object TestAction(int $$)
+        {
+            return null;
+        }
+    }
+    ");
+
+        // Assert
         Assert.Collection(
             result.Completions.Items,
             i => Assert.Equal("id", i.DisplayText));
+    }
+
+    [Fact]
+    public async Task Insertion_Space_ControllerAction_HasParameter_Incomplete_ReturnActionParameterItem()
+    {
+        // Arrange & Act
+        var result = await GetCompletionsAndServiceAsync(@"
+    using System;
+    using System.Diagnostics.CodeAnalysis;
+    using Microsoft.AspNetCore.Builder;
+    using Microsoft.AspNetCore.Mvc;
+
+    class Program
+    {
+        static void Main()
+        {
+        }
+    }
+
+    public class TestController
+    {
+        [HttpGet(@""{id}"")]
+        public object TestAction(int $$
+    }
+    ");
+
+        // Assert
+        Assert.Collection(
+            result.Completions.Items,
+            i => Assert.Equal("id", i.DisplayText));
+    }
+
+    [Fact]
+    public async Task Insertion_Space_ControllerAction_HasParameter_BeforeComma_ReturnActionParameterItem()
+    {
+        // Arrange & Act
+        var result = await GetCompletionsAndServiceAsync(@"
+    using System;
+    using System.Diagnostics.CodeAnalysis;
+    using Microsoft.AspNetCore.Builder;
+    using Microsoft.AspNetCore.Mvc;
+
+    class Program
+    {
+        static void Main()
+        {
+        }
+    }
+
+    public class TestController
+    {
+        [HttpGet(@""{id}"")]
+        public object TestAction(int $$, string blah)
+        {
+            return null;
+        }
+    }
+    ");
+
+        // Assert
+        Assert.Collection(
+            result.Completions.Items,
+            i => Assert.Equal("id", i.DisplayText));
+    }
+
+    [Fact]
+    public async Task Insertion_Space_NonControllerAction_HasParameter_ReturnActionParameterItem()
+    {
+        // Arrange & Act
+        var result = await GetCompletionsAndServiceAsync(@"
+    using System;
+    using System.Diagnostics.CodeAnalysis;
+    using Microsoft.AspNetCore.Builder;
+    using Microsoft.AspNetCore.Mvc;
+
+    class Program
+    {
+        static void Main()
+        {
+        }
+    }
+
+    public class TestController
+    {
+        [HttpGet(@""{id}"")]
+        internal object TestAction(int $$)
+        {
+            return null;
+        }
+    }
+    ");
+
+        // Assert
+        Assert.Empty(result.Completions.Items);
     }
 
     private async Task<CompletionResult> GetCompletionsAndServiceAsync(string source)

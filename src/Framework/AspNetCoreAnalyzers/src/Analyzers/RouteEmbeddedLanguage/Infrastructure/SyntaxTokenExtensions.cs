@@ -24,25 +24,6 @@ internal static class SyntaxTokenExtensions
         return node;
     }
 
-    public static SyntaxNode? TryFindToLevelArgument(this SyntaxNode node)
-    {
-        var current = node;
-        while (current != null)
-        {
-            if (current.Parent?.IsKind(SyntaxKind.Argument) ?? false)
-            {
-                if (current.Parent?.Parent?.IsKind(SyntaxKind.ArgumentList) ?? false)
-                {
-                    return current;
-                }
-            }
-
-            current = current.Parent;
-        }
-
-        return null;
-    }
-
     public static SyntaxNode GetRequiredParent(this SyntaxToken token)
         => token.Parent ?? throw new InvalidOperationException("Token's parent was null");
 
