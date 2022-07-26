@@ -18,7 +18,7 @@ internal readonly record struct RoutePatternUsageContext(
 
 internal readonly record struct MapMethodParts(
     IMethodSymbol Method,
-    ExpressionSyntax RouteStringExpression,
+    LiteralExpressionSyntax RouteStringExpression,
     ExpressionSyntax DelegateExpression);
 
 internal static class RoutePatternUsageDetector
@@ -184,12 +184,12 @@ internal static class RoutePatternUsageDetector
         }
 
         var routeStringArgument = GetArgumentSyntax(argumentList, method, routeStringParameter);
-        if (routeStringArgument == null)
+        if (routeStringArgument?.Expression is not LiteralExpressionSyntax literalExpression)
         {
             return null;
         }
 
-        return new MapMethodParts(method, routeStringArgument.Expression, delegateArgument.Expression);
+        return new MapMethodParts(method, literalExpression, delegateArgument.Expression);
     }
 
     private static ArgumentSyntax? GetArgumentSyntax(BaseArgumentListSyntax argumentList, IMethodSymbol methodSymbol, IParameterSymbol? parameterSymbol)

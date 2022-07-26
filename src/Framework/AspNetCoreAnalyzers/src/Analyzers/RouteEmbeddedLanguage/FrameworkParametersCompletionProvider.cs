@@ -121,8 +121,6 @@ public class FrameworkParametersCompletionProvider : CompletionProvider
             return;
         }
 
-        EmbeddedCompletionContext routePatternCompletionContext = default;
-
         var semanticModel = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
         if (semanticModel == null)
         {
@@ -149,44 +147,25 @@ public class FrameworkParametersCompletionProvider : CompletionProvider
             return;
         }
 
+        SyntaxToken routeStringToken;
+        SyntaxNode methodNode;
+
         if (container.Parent.IsKind(SyntaxKind.Argument))
         {
+            // Minimal API
             var mapMethodParts = RoutePatternUsageDetector.FindMapMethodParts(semanticModel, wellKnownTypes, container, context.CancellationToken);
             if (mapMethodParts == null)
             {
                 return;
             }
-            var (method, routeStringExpression, delegateExpression) = mapMethodParts.Value;
+            var (_, routeStringExpression, delegateExpression) = mapMethodParts.Value;
 
-            foreach (var child in routeStringExpression.ChildNodesAndTokens())
-            {
-                if (child.IsToken)
-                {
-                    var virtualChars = CSharpVirtualCharService.Instance.TryConvertToVirtualChars(child.AsToken());
-                    var tree = RoutePatternParser.TryParse(virtualChars, supportTokenReplacement: false);
-                    if (tree == null)
-                    {
-                        continue;
-                    }
-
-                    if (routePatternCompletionContext.Items == null)
-                    {
-                        routePatternCompletionContext = new EmbeddedCompletionContext(context, tree, wellKnownTypes, method, isMinimal: true, isMvcAttribute: false);
-                    }
-
-                    var existingParameterNames = GetExistingParameterNames(delegateExpression);
-                    foreach (var parameterName in existingParameterNames)
-                    {
-                        routePatternCompletionContext.AddUsedParameterName(parameterName);
-                    }
-
-                    ProvideCompletions(routePatternCompletionContext);
-                    break;
-                }
-            }
+            routeStringToken = routeStringExpression.Token;
+            methodNode = delegateExpression;
         }
         else if (container.Parent.IsKind(SyntaxKind.Parameter))
         {
+            // MVC
             var methodSyntax = container.FirstAncestorOrSelf<MethodDeclarationSyntax>();
             var methodSymbol = semanticModel.GetDeclaredSymbol(methodSyntax, context.CancellationToken);
 
@@ -199,29 +178,35 @@ public class FrameworkParametersCompletionProvider : CompletionProvider
             }
 
             var routeToken = TryGetMvcActionRouteToken(context, semanticModel, methodSyntax);
-            if (routeToken != null)
+            if (routeToken == null)
             {
-                var virtualChars = CSharpVirtualCharService.Instance.TryConvertToVirtualChars(routeToken.Value);
-                var tree = RoutePatternParser.TryParse(virtualChars, supportTokenReplacement: false);
-                if (tree == null)
-                {
-                    return;
-                }
-
-                if (routePatternCompletionContext.Items == null)
-                {
-                    routePatternCompletionContext = new EmbeddedCompletionContext(context, tree, wellKnownTypes, methodSymbol: null, isMinimal: true, isMvcAttribute: false);
-                }
-
-                var existingParameterNames = GetExistingParameterNames(methodSyntax);
-                foreach (var parameterName in existingParameterNames)
-                {
-                    routePatternCompletionContext.AddUsedParameterName(parameterName);
-                }
-
-                ProvideCompletions(routePatternCompletionContext);
+                return;
             }
+
+            routeStringToken = routeToken.Value;
+            methodNode = methodSyntax;
         }
+        else
+        {
+            return;
+        }
+
+        var virtualChars = CSharpVirtualCharService.Instance.TryConvertToVirtualChars(routeStringToken);
+        var tree = RoutePatternParser.TryParse(virtualChars, supportTokenReplacement: false);
+        if (tree == null)
+        {
+            return;
+        }
+
+        var routePatternCompletionContext = new EmbeddedCompletionContext(context, tree, wellKnownTypes);
+
+        var existingParameterNames = GetExistingParameterNames(methodNode);
+        foreach (var parameterName in existingParameterNames)
+        {
+            routePatternCompletionContext.AddUsedParameterName(parameterName);
+        }
+
+        ProvideCompletions(routePatternCompletionContext);
 
         if (routePatternCompletionContext.Items == null || routePatternCompletionContext.Items.Count == 0)
         {
@@ -483,9 +468,6 @@ public class FrameworkParametersCompletionProvider : CompletionProvider
 
         public readonly RoutePatternTree Tree;
         public readonly WellKnownTypes WellKnownTypes;
-        public readonly IMethodSymbol? MethodSymbol;
-        public readonly bool IsMinimal;
-        public readonly bool IsMvcAttribute;
         public readonly CancellationToken CancellationToken;
         public readonly int Position;
         public readonly CompletionTrigger Trigger;
@@ -494,17 +476,11 @@ public class FrameworkParametersCompletionProvider : CompletionProvider
         public EmbeddedCompletionContext(
             CompletionContext context,
             RoutePatternTree tree,
-            WellKnownTypes wellKnownTypes,
-            IMethodSymbol? methodSymbol,
-            bool isMinimal,
-            bool isMvcAttribute)
+            WellKnownTypes wellKnownTypes)
         {
             _context = context;
             Tree = tree;
             WellKnownTypes = wellKnownTypes;
-            MethodSymbol = methodSymbol;
-            IsMinimal = isMinimal;
-            IsMvcAttribute = isMvcAttribute;
             Position = _context.Position;
             Trigger = _context.Trigger;
             CancellationToken = _context.CancellationToken;
