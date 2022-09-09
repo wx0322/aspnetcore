@@ -155,7 +155,7 @@
   </Target>
 
   <!-- In inner (per-queue) builds, Publish the test projects and create work items. -->
-  <Target Name="Gather" BeforeTargets="BeforeTest" Condition=" '$(HelixTargetQueue)' != '' ">
+  <Target Name="Gather" BeforeTargets="BeforeTest" Condition=" '$(HelixTargetQueue)' != '' AND '$(TestGroupName)' == 'ProjectTemplates.Mvc.Tests' ">
     <MSBuild Projects="@(ProjectToBuild)"
         BuildInParallel="%(ProjectToBuild.BuildInParallel)"
         Targets="CreateHelixPayload"
