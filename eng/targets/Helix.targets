@@ -152,6 +152,7 @@
     </ItemGroup>
 
     <PropertyGroup>
+      <BuildHelixPayload Condition="$(MSBuildProjectFullPath.ToLowerInvariant().Contains('template'))">true</BuildHelixPayload>
       <!-- Check HelixTargetQueues to allow RunHelix.ps1 to submit jobs anywhere. -->
       <BuildHelixPayload
           Condition=" '$(HelixTargetQueues)' == '' AND @(_HelixApplicableTargetQueue->Count()) == 0 ">false</BuildHelixPayload>

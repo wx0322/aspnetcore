@@ -135,6 +135,7 @@
 
     <BuildHelixPayload Condition="'$(BuildHelixPayload)' == '' AND $(IsTestProject) ">true</BuildHelixPayload>
     <SkipTests Condition="'$(SkipHelixReadyTests)' == 'true' AND '$(BuildHelixPayload)' == 'true'">true</SkipTests>
+    <BuildHelixPayload Condition="'$(BuildHelixPayload)' == '' AND $(IsTestProject) ">false</BuildHelixPayload>
   </PropertyGroup>
 
   <PropertyGroup>
