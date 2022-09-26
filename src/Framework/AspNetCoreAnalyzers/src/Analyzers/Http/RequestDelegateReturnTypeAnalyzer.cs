@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Operations;
@@ -52,8 +53,7 @@ public partial class RequestDelegateReturnTypeAnalyzer : DiagnosticAnalyzer
                     // Return statement of Task<T> means a value was returned.
                     foreach (var item in anonymousFunction.Body.Descendants())
                     {
-                        if (item.Kind == OperationKind.Return &&
-                            item is IReturnOperation returnOperation &&
+                        if (item is IReturnOperation returnOperation &&
                             returnOperation.ReturnedValue is { } returnedValue)
                         {
                             var resolvedOperation = WalkDownConversion(returnedValue);
@@ -87,5 +87,36 @@ public partial class RequestDelegateReturnTypeAnalyzer : DiagnosticAnalyzer
         }
 
         return operation;
+    }
+
+    internal sealed class WellKnownTypes
+    {
+        public static bool TryCreate(Compilation compilation, [NotNullWhen(returnValue: true)] out WellKnownTypes? wellKnownTypes)
+        {
+            wellKnownTypes = default;
+
+            const string RequestDelegate = "Microsoft.AspNetCore.Http.RequestDelegate";
+            if (compilation.GetTypeByMetadataName(RequestDelegate) is not { } requestDelegate)
+            {
+                return false;
+            }
+
+            const string TaskOfT = "System.Threading.Tasks.Task`1";
+            if (compilation.GetTypeByMetadataName(TaskOfT) is not { } taskOfT)
+            {
+                return false;
+            }
+
+            wellKnownTypes = new()
+            {
+                RequestDelegate = requestDelegate,
+                TaskOfT = taskOfT
+            };
+
+            return true;
+        }
+
+        public INamedTypeSymbol RequestDelegate { get; private init; }
+        public INamedTypeSymbol TaskOfT { get; private init; }
     }
 }
